@@ -1,0 +1,117 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Runtime.CompilerServices;
+using System.Security.Permissions;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace MultiTasksOnlyKeepLastDemo
+{
+    /// <summary>
+    /// 可等待的任务
+    /// </summary>
+    public class AwaitableTask
+    {
+        /// <summary>
+        /// 获取任务是否为不可执行状态
+        /// </summary>
+        public bool NotExecutable { get; private set; }
+
+        /// <summary>
+        /// 设置任务不可执行
+        /// </summary>
+        public void SetNotExecutable()
+        {
+            NotExecutable = true;
+        }
+
+        /// <summary>
+        /// 获取任务是否有效
+        /// 注：对无效任务，可以不做处理。减少并发操作导致的干扰
+        /// </summary>
+        public bool IsInvalid { get; private set; } = true;
+
+        /// <summary>
+        /// 标记任务无效
+        /// </summary>
+        public void MarkTaskValid()
+        {
+            IsInvalid = false;
+        }
+
+        #region Task
+
+        private readonly Task _task;
+        /// <summary>
+        /// 初始化可等待的任务。
+        /// </summary>
+        /// <param name="task"></param>
+        public AwaitableTask(Task task) => _task = task;
+
+        /// <summary>
+        /// 获取任务是否已完成
+        /// </summary>
+        public bool IsCompleted => _task.IsCompleted;
+
+        /// <summary>
+        /// 任务的Id
+        /// </summary>
+        public int TaskId => _task.Id;
+
+        /// <summary>
+        /// 开始任务
+        /// </summary>
+        public void Start() => _task.Start();
+
+        /// <summary>
+        /// 同步执行开始任务
+        /// </summary>
+        public void RunSynchronously() => _task.RunSynchronously();
+
+        #endregion
+
+        #region TaskAwaiter
+
+        /// <summary>
+        /// 获取任务等待器
+        /// </summary>
+        /// <returns></returns>
+        public TaskAwaiter GetAwaiter() => new TaskAwaiter(this);
+
+        /// <summary>Provides an object that waits for the completion of an asynchronous task. </summary>
+        [HostProtection(SecurityAction.LinkDemand, ExternalThreading = true, Synchronization = true)]
+        public struct TaskAwaiter : INotifyCompletion
+        {
+            private readonly AwaitableTask _task;
+
+            /// <summary>
+            /// 任务等待器
+            /// </summary>
+            /// <param name="awaitableTask"></param>
+            public TaskAwaiter(AwaitableTask awaitableTask) => _task = awaitableTask;
+
+            /// <summary>
+            /// 任务是否完成.
+            /// </summary>
+            public bool IsCompleted => _task._task.IsCompleted;
+
+            /// <inheritdoc />
+            public void OnCompleted(Action continuation)
+            {
+                var This = this;
+                _task._task.ContinueWith(t =>
+                {
+                    if (!This._task.NotExecutable) continuation?.Invoke();
+                });
+            }
+            /// <summary>
+            /// 获取任务结果
+            /// </summary>
+            public void GetResult() => _task._task.Wait();
+        }
+
+        #endregion
+
+    }
+}
